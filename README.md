@@ -4,6 +4,19 @@ Application **bureau** (Windows / macOS) pour **télécharger des fichiers par l
 
 Stack : **Electron** · **React** · **TypeScript** · **Vite** · **Tailwind CSS**.
 
+### Pourquoi ce projet ?
+
+J’en avais marre de télécharger **plus d’une centaine de fichiers un par un**, alors j’ai créé BatchDL pour **m’en faciliter la vie**. En pratique : vous **copiez la liste de liens**, vous la **collez dans le logiciel**, vous **choisissez le dossier de destination**, et c’est tout.
+
+**Sites avec lesquels ça fonctionne bien actuellement** (hébergeurs testés et pris en charge de façon fiable à ce jour) :
+
+| Site | Remarque |
+|------|----------|
+| **[datanodes.to](https://datanodes.to)** | Passage par un navigateur intégré (délais / page du site). |
+| **[fuckingfast.co](https://fuckingfast.co)** | Résolution de la page puis lien de téléchargement. |
+
+D’autres URLs (lien direct HTTP(S), certains tunnels) peuvent aussi marcher ; les détails techniques sont dans la section **Hébergeurs / types d’URL** (plus bas, sous *Utilisation*).
+
 ---
 
 ## Prérequis
