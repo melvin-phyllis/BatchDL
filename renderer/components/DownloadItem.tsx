@@ -20,6 +20,11 @@ export const DownloadItem = ({ item, onCancel, onRetry }: DownloadItemProps) => 
         </div>
         <Badge status={item.status} />
       </div>
+      {item.resumedFromPercent !== undefined && item.status === "downloading" && (
+        <p className="text-xs font-medium text-emerald-400">
+          Reprise à environ {item.resumedFromPercent}% (HTTP Range)
+        </p>
+      )}
       <Progress value={item.percent} />
       <div className="flex items-center justify-between text-xs text-zinc-400">
         <span>{item.percent.toFixed(1)}%</span>

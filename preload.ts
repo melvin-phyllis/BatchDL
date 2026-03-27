@@ -6,6 +6,7 @@ import {
   DownloadProgressPayload,
   DownloadStatusPayload,
   DownloadStatsPayload,
+  RestoreDownloadRow,
   StartDownloadsPayload
 } from "./shared/types";
 
@@ -34,7 +35,12 @@ const electronApi = {
   onDownloadCountdown: (listener: (payload: DownloadCountdownPayload) => void): Unsubscribe =>
     on("download-countdown", listener),
   onDownloadStats: (listener: (payload: DownloadStatsPayload) => void): Unsubscribe =>
-    on("download-stats", listener)
+    on("download-stats", listener),
+  getPendingRestore: (): Promise<RestoreDownloadRow[]> => ipcRenderer.invoke("get-pending-restore"),
+  confirmRestoreDownloads: (urls: string[]): Promise<{ queued: number }> =>
+    ipcRenderer.invoke("confirm-restore-downloads", urls),
+  discardRestoreDownloads: (urls: string[]): Promise<{ removed: number }> =>
+    ipcRenderer.invoke("discard-restore-downloads", urls)
 };
 
 contextBridge.exposeInMainWorld("electronApi", electronApi);

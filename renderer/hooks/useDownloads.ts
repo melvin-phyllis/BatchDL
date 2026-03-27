@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { DownloadStatus, StartDownloadsPayload } from "@shared/types";
+import { DownloadStatus, RestoreDownloadRow, StartDownloadsPayload } from "@shared/types";
 
 export interface DownloadItemState {
   url: string;
@@ -12,6 +12,8 @@ export interface DownloadItemState {
   filePath?: string;
   error?: string;
   countdownRemaining?: number;
+  /** Affiché une fois après reprise HTTP Range. */
+  resumedFromPercent?: number;
 }
 
 interface StatsState {
@@ -33,7 +35,19 @@ const fileNameFromUrl = (url: string): string => {
 export const useDownloads = () => {
   const [items, setItems] = useState<DownloadItemState[]>([]);
   const [stats, setStats] = useState<StatsState>({ total: 0, done: 0, failed: 0, speed: 0 });
+  const [restorePrompt, setRestorePrompt] = useState<RestoreDownloadRow[] | null>(null);
   const hasElectronApi = typeof window !== "undefined" && typeof window.electronApi !== "undefined";
+
+  useEffect(() => {
+    if (!hasElectronApi) {
+      return;
+    }
+    void window.electronApi.getPendingRestore().then((rows) => {
+      if (rows.length > 0) {
+        setRestorePrompt(rows);
+      }
+    });
+  }, [hasElectronApi]);
 
   useEffect(() => {
     if (!hasElectronApi) {
@@ -51,7 +65,11 @@ export const useDownloads = () => {
                 speed: payload.speed,
                 downloaded: payload.downloaded,
                 total: payload.total,
-                fileName: payload.fileName
+                fileName: payload.fileName,
+                resumedFromPercent:
+                  payload.resumedFromPercent !== undefined
+                    ? payload.resumedFromPercent
+                    : item.resumedFromPercent
               }
             : item
         )
@@ -68,7 +86,8 @@ export const useDownloads = () => {
                 percent: 100,
                 speed: 0,
                 filePath: payload.filePath,
-                fileName: payload.fileName
+                fileName: payload.fileName,
+                resumedFromPercent: undefined
               }
             : item
         )
@@ -79,7 +98,7 @@ export const useDownloads = () => {
       setItems((prev) =>
         prev.map((item) =>
           item.url === payload.url
-            ? { ...item, status: "error", error: payload.error, speed: 0 }
+            ? { ...item, status: "error", error: payload.error, speed: 0, resumedFromPercent: undefined }
             : item
         )
       );
@@ -144,7 +163,8 @@ export const useDownloads = () => {
         speed: 0,
         downloaded: 0,
         total: 0,
-        countdownRemaining: undefined
+        countdownRemaining: undefined,
+        resumedFromPercent: undefined
       }))
     );
     await window.electronApi.startDownloads(payload);
@@ -168,10 +188,58 @@ export const useDownloads = () => {
     setItems((prev) =>
       prev.map((item) =>
         item.url === url
-          ? { ...item, status: "waiting", error: undefined, percent: 0, downloaded: 0, total: 0 }
+          ? {
+              ...item,
+              status: "waiting",
+              error: undefined,
+              percent: item.percent,
+              downloaded: item.downloaded,
+              total: item.total
+            }
           : item
       )
     );
+  };
+
+  const confirmRestoreDownloads = async (urls: string[]): Promise<void> => {
+    if (!hasElectronApi || !restorePrompt) {
+      return;
+    }
+    const rowMap = new Map(restorePrompt.map((r) => [r.url, r]));
+    await window.electronApi.confirmRestoreDownloads(urls);
+    setItems((prev) => {
+      const next = [...prev];
+      for (const u of urls) {
+        const r = rowMap.get(u);
+        if (!r) {
+          continue;
+        }
+        if (next.some((i) => i.url === u)) {
+          continue;
+        }
+        next.push({
+          url: u,
+          fileName: r.filename,
+          status: "waiting",
+          percent: r.percent,
+          speed: 0,
+          downloaded: r.bytesDownloaded,
+          total: r.totalBytes,
+          resumedFromPercent: r.percent,
+          countdownRemaining: undefined
+        });
+      }
+      return next;
+    });
+    setRestorePrompt(null);
+  };
+
+  const discardRestoreDownloads = async (urls: string[]): Promise<void> => {
+    if (!hasElectronApi) {
+      return;
+    }
+    await window.electronApi.discardRestoreDownloads(urls);
+    setRestorePrompt(null);
   };
 
   const computed = useMemo(() => stats, [stats]);
@@ -182,6 +250,9 @@ export const useDownloads = () => {
     hasElectronApi,
     startDownloads,
     cancelDownload,
-    retryDownload
+    retryDownload,
+    restorePrompt,
+    confirmRestoreDownloads,
+    discardRestoreDownloads
   };
 };

@@ -17,7 +17,17 @@ const App = () => {
   const [concurrency, setConcurrency] = useState(3);
   const [delayMs, setDelayMs] = useState(500);
   const [errorMessage, setErrorMessage] = useState("");
-  const { items, stats, hasElectronApi, startDownloads, cancelDownload, retryDownload } = useDownloads();
+  const {
+    items,
+    stats,
+    hasElectronApi,
+    startDownloads,
+    cancelDownload,
+    retryDownload,
+    restorePrompt,
+    confirmRestoreDownloads,
+    discardRestoreDownloads
+  } = useDownloads();
 
   const urls = useMemo(
     () =>
@@ -87,6 +97,46 @@ const App = () => {
 
   return (
     <div className="h-screen overflow-hidden bg-[#131313] text-foreground">
+      {restorePrompt && restorePrompt.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-zinc-700 bg-zinc-950 p-6 shadow-2xl">
+            <h3 className="mb-2 text-lg font-bold text-zinc-100">Téléchargements interrompus</h3>
+            <p className="mb-4 text-sm text-zinc-400">
+              {restorePrompt.length} fichier(s) partiel(s) détecté(s). Reprendre là où vous vous êtes arrêté
+              (HTTP Range), ou supprimer les fichiers partiels.
+            </p>
+            <ul className="mb-6 max-h-48 space-y-2 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-900/80 p-3 text-sm">
+              {restorePrompt.map((row) => (
+                <li key={row.url} className="truncate text-zinc-300">
+                  <span className="font-medium text-zinc-100">{row.filename}</span>{" "}
+                  <span className="text-zinc-500">— ~{row.percent}%</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                className="flex-1"
+                onClick={() => {
+                  const f = restorePrompt[0]?.destFolder;
+                  if (f) {
+                    setFolder(f);
+                  }
+                  void confirmRestoreDownloads(restorePrompt.map((r) => r.url));
+                }}
+              >
+                Reprendre tout
+              </Button>
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => void discardRestoreDownloads(restorePrompt.map((r) => r.url))}
+              >
+                Tout supprimer
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="fixed left-0 right-0 top-0 z-30 border-b border-zinc-800 bg-zinc-950/95 px-6 py-3 backdrop-blur">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4">

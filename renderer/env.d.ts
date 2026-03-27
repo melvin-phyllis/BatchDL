@@ -7,6 +7,7 @@ import type {
   DownloadProgressPayload,
   DownloadStatusPayload,
   DownloadStatsPayload,
+  RestoreDownloadRow,
   StartDownloadsPayload
 } from "../shared/types";
 
@@ -21,6 +22,9 @@ interface ElectronApi {
   onDownloadStatus: (listener: (payload: DownloadStatusPayload) => void) => () => void;
   onDownloadCountdown: (listener: (payload: DownloadCountdownPayload) => void) => () => void;
   onDownloadStats: (listener: (payload: DownloadStatsPayload) => void) => () => void;
+  getPendingRestore: () => Promise<RestoreDownloadRow[]>;
+  confirmRestoreDownloads: (urls: string[]) => Promise<{ queued: number }>;
+  discardRestoreDownloads: (urls: string[]) => Promise<{ removed: number }>;
 }
 
 declare global {

@@ -21,6 +21,19 @@ export interface DownloadProgressPayload {
   downloaded: number;
   total: number;
   fileName: string;
+  /** Présent sur le premier événement après reprise HTTP Range. */
+  resumedFromPercent?: number;
+}
+
+/** Ligne affichée dans la boîte de reprise au démarrage. */
+export interface RestoreDownloadRow {
+  url: string;
+  filename: string;
+  percent: number;
+  bytesDownloaded: number;
+  totalBytes: number;
+  destFolder: string;
+  destPath: string;
 }
 
 export interface DownloadDonePayload {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, powerMonitor, powerSaveBlocker } from "electron";
 import axios from "axios";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,10 +10,18 @@ import {
   DownloadProgressPayload,
   DownloadStatusPayload,
   DownloadStatsPayload,
+  RestoreDownloadRow,
   StartDownloadsPayload
 } from "./shared/types";
-import { downloadWithRetry } from "./utils/downloader";
+import { downloadWithRetry, safeFileName } from "./utils/downloader";
 import { closeSharedDatanodesBrowser, resolveDatanodesDownload } from "./utils/datanodesPuppeteer";
+import {
+  getDownloadState,
+  getIncompleteDownloads,
+  loadState,
+  removeDownload,
+  upsertDownload
+} from "./utils/downloadState";
 import { initLogger, logError, logInfo, logWarn } from "./utils/logger";
 
 type QueueStatus = "waiting" | "resolving" | "pending" | "downloading" | "paused" | "done" | "error";
@@ -24,6 +32,8 @@ interface QueueItem {
   status: QueueStatus;
   resolvedFileName?: string;
   requestHeaders?: Record<string, string>;
+  /** Reprise : chemin du fichier partiel existant. */
+  resumeDestPath?: string;
 }
 
 interface ActiveDownload {
@@ -31,6 +41,8 @@ interface ActiveDownload {
 }
 
 let mainWindow: BrowserWindow | null = null;
+/** Mis à `true` après confirmation utilisateur pour autoriser la fermeture réelle. */
+let allowQuit = false;
 let queue: QueueItem[] = [];
 let activeDownloads = new Map<string, ActiveDownload>();
 let completed = 0;
@@ -38,6 +50,72 @@ let failed = 0;
 let currentSpeedMap = new Map<string, number>();
 let concurrency = 3;
 let delayMs = 500;
+
+/** Politique pour les fichiers cible déjà présents (réinitialisée à chaque nouveau lot). */
+let duplicateFilePolicy: "ask" | "skip-all" | "overwrite-all" = "ask";
+
+const resetDuplicateFilePolicy = (): void => {
+  duplicateFilePolicy = "ask";
+};
+
+type DuplicateChoice = "skip" | "overwrite";
+
+const askDuplicateFileAction = async (absolutePath: string, label: string): Promise<DuplicateChoice> => {
+  if (duplicateFilePolicy === "skip-all") {
+    return "skip";
+  }
+  if (duplicateFilePolicy === "overwrite-all") {
+    return "overwrite";
+  }
+  const opts = {
+    type: "question" as const,
+    buttons: [
+      "Passer (garder l'existant)",
+      "Écraser",
+      "Passer tous les doublons",
+      "Écraser tous les doublons"
+    ],
+    defaultId: 0,
+    cancelId: 0,
+    title: "Fichier déjà présent",
+    message: `Un fichier existe déjà sur le disque :\n\n${label}\n\nVoulez-vous le remplacer ou ignorer ce téléchargement ?`,
+    detail: absolutePath
+  };
+  const parent = mainWindow ?? BrowserWindow.getFocusedWindow();
+  const result = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
+  switch (result.response) {
+    case 0:
+      return "skip";
+    case 1:
+      return "overwrite";
+    case 2:
+      duplicateFilePolicy = "skip-all";
+      return "skip";
+    case 3:
+      duplicateFilePolicy = "overwrite-all";
+      return "overwrite";
+    default:
+      return "skip";
+  }
+};
+
+/** Identifiant retourné par `powerSaveBlocker.start` — évite la mise en veille du PC pendant les téléchargements. */
+let downloadPowerSaveBlockerId: number | null = null;
+
+/** Téléchargements interrompus volontairement après reprise de veille système (à remettre en file). */
+const urlsAbortedForSystemResume = new Set<string>();
+
+const syncPowerSaveBlockerForDownloads = (): void => {
+  const hasActiveWork = activeDownloads.size > 0;
+  if (hasActiveWork && downloadPowerSaveBlockerId === null) {
+    downloadPowerSaveBlockerId = powerSaveBlocker.start("prevent-app-suspension");
+    logInfo("power save: veille système bloquée pendant les téléchargements");
+  } else if (!hasActiveWork && downloadPowerSaveBlockerId !== null) {
+    powerSaveBlocker.stop(downloadPowerSaveBlockerId);
+    downloadPowerSaveBlockerId = null;
+    logInfo("power save: veille système autorisée à nouveau");
+  }
+};
 
 const isDevelopment = process.env.NODE_ENV === "development";
 
@@ -290,13 +368,44 @@ const resolveDownloadUrl = async (
   return { resolvedUrl, sourcePageUrl: url, resolvedFileName };
 };
 
+/**
+ * Après veille Windows, les flux HTTP/Chromium peuvent rester bloqués sans jamais se terminer.
+ * On annule proprement les tâches actives et on les remet en `waiting` avec reprise sur fichier partiel.
+ */
+const handleSystemResume = (): void => {
+  logInfo("powerMonitor: reprise système — réinitialisation des téléchargements actifs");
+  if (activeDownloads.size === 0) {
+    void maybeStartNext();
+    return;
+  }
+  for (const url of [...activeDownloads.keys()]) {
+    urlsAbortedForSystemResume.add(url);
+    const item = queue.find((q) => q.url === url);
+    if (item) {
+      const st = getDownloadState(url);
+      if (st?.destPath && fs.existsSync(st.destPath)) {
+        item.resumeDestPath = st.destPath;
+      }
+    }
+    activeDownloads.get(url)?.controller.abort();
+  }
+};
+
+/**
+ * Lance jusqu'à `concurrency` téléchargements en parallèle.
+ * Important : ne pas `await startSingleDownload` — sinon un seul tour à la fois jusqu'à la fin du fichier.
+ */
 const maybeStartNext = async (): Promise<void> => {
   while (activeDownloads.size < concurrency) {
     const next = pickNextItem();
     if (!next) {
       return;
     }
-    await startSingleDownload(next);
+    void startSingleDownload(next).catch((err) => {
+      logError("download task unexpected failure", {
+        error: err instanceof Error ? err.message : String(err)
+      });
+    });
     if (delayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
@@ -307,16 +416,53 @@ const startSingleDownload = async (item: QueueItem): Promise<void> => {
   logInfo("download task start", { url: item.url });
   const controller = new AbortController();
   activeDownloads.set(item.url, { controller });
+  syncPowerSaveBlockerForDownloads();
   currentSpeedMap.set(item.url, 0);
+
+  const tentativeDestPath =
+    item.resumeDestPath && fs.existsSync(item.resumeDestPath)
+      ? item.resumeDestPath
+      : path.join(
+          item.destinationFolder,
+          item.resolvedFileName ? safeFileName(item.resolvedFileName) : safeFileName(path.basename(item.url))
+        );
 
   try {
     item.status = "resolving";
     emitStatus(item.url, "resolving");
+    upsertDownload(item.url, {
+      url: item.url,
+      filename: item.resolvedFileName ?? path.basename(item.url),
+      destFolder: item.destinationFolder,
+      destPath: tentativeDestPath,
+      bytesDownloaded:
+        item.resumeDestPath && fs.existsSync(item.resumeDestPath)
+          ? fs.statSync(item.resumeDestPath).size
+          : 0,
+      totalBytes: 0,
+      percent: 0,
+      status: "resolving",
+      startedAt: getDownloadState(item.url)?.startedAt ?? new Date().toISOString()
+    });
+
     const { resolvedUrl, sourcePageUrl, resolvedFileName, requestHeaders } = await resolveDownloadUrl(
       item.url,
       controller.signal,
       (secondsRemaining) => {
         item.status = "pending";
+        upsertDownload(item.url, {
+          url: item.url,
+          filename: item.resolvedFileName ?? path.basename(item.url),
+          destFolder: item.destinationFolder,
+          destPath: tentativeDestPath,
+          bytesDownloaded:
+            item.resumeDestPath && fs.existsSync(item.resumeDestPath)
+              ? fs.statSync(item.resumeDestPath).size
+              : 0,
+          totalBytes: 0,
+          percent: 0,
+          status: "pending"
+        });
         emitStatus(item.url, "pending", undefined, item.resolvedFileName);
         emitCountdown(item.url, secondsRemaining);
       }
@@ -333,8 +479,64 @@ const startSingleDownload = async (item: QueueItem): Promise<void> => {
       await registerFuckingfastCount(sourcePageUrl);
     }
 
+    const safeBaseName = safeFileName(item.resolvedFileName ?? path.basename(item.url));
+    const candidatePath = path.join(item.destinationFolder, safeBaseName);
+
+    if (fs.existsSync(candidatePath)) {
+      try {
+        if (fs.statSync(candidatePath).size === 0) {
+          fs.unlinkSync(candidatePath);
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    const existingPath =
+      item.resumeDestPath && fs.existsSync(item.resumeDestPath) ? item.resumeDestPath : undefined;
+
+    const sameAsResume = Boolean(
+      existingPath && path.normalize(existingPath) === path.normalize(candidatePath)
+    );
+
+    if (!sameAsResume && fs.existsSync(candidatePath) && fs.statSync(candidatePath).size > 0) {
+      const choice = await askDuplicateFileAction(candidatePath, safeBaseName);
+      if (choice === "skip") {
+        removeDownload(item.url);
+        item.status = "done";
+        emitStatus(item.url, "done", undefined, safeBaseName);
+        completed += 1;
+        currentSpeedMap.delete(item.url);
+        emit("download-done", {
+          url: item.url,
+          filePath: candidatePath,
+          fileName: safeBaseName
+        });
+        return;
+      }
+      try {
+        fs.unlinkSync(candidatePath);
+      } catch (e) {
+        logError("could not delete file for overwrite", { candidatePath });
+        throw e;
+      }
+    }
+
     item.status = "downloading";
     emitStatus(item.url, "downloading", undefined, item.resolvedFileName);
+
+    upsertDownload(item.url, {
+      url: item.url,
+      filename: item.resolvedFileName ?? path.basename(item.url),
+      destFolder: item.destinationFolder,
+      destPath: existingPath ?? candidatePath,
+      bytesDownloaded: existingPath ? fs.statSync(existingPath).size : 0,
+      totalBytes: 0,
+      percent: 0,
+      status: "downloading",
+      dlUrl: resolvedUrl
+    });
+
     const result = await downloadWithRetry(
       resolvedUrl,
       item.destinationFolder,
@@ -347,17 +549,38 @@ const startSingleDownload = async (item: QueueItem): Promise<void> => {
             speed: progress.speed,
             downloaded: progress.downloaded,
             total: progress.total,
-            fileName: progress.fileName
+            fileName: progress.fileName,
+            resumedFromPercent: progress.resumedFromPercent
           };
           emit("download-progress", payload);
           emitStats();
         }
       },
       controller.signal,
-      { preferredFileName: item.resolvedFileName, requestHeaders: item.requestHeaders },
+      {
+        preferredFileName: item.resolvedFileName,
+        requestHeaders: item.requestHeaders,
+        originalUrl: item.url,
+        existingFilePath: existingPath,
+        ...(existingPath ? {} : { exactDestPath: candidatePath }),
+        onCheckpoint: ({ downloaded, total, destPath: dest }) => {
+          upsertDownload(item.url, {
+            url: item.url,
+            filename: path.basename(dest),
+            destFolder: item.destinationFolder,
+            destPath: dest,
+            bytesDownloaded: downloaded,
+            totalBytes: total,
+            percent: total > 0 ? Math.round((downloaded / total) * 100) : 0,
+            status: "downloading",
+            dlUrl: resolvedUrl
+          });
+        }
+      },
       3
     );
 
+    removeDownload(item.url);
     item.status = "done";
     logInfo("download task done", {
       url: item.url,
@@ -374,7 +597,44 @@ const startSingleDownload = async (item: QueueItem): Promise<void> => {
     };
     emit("download-done", donePayload);
   } catch (error) {
-    if (item.status !== "paused") {
+    if (urlsAbortedForSystemResume.has(item.url)) {
+      urlsAbortedForSystemResume.delete(item.url);
+      const st = getDownloadState(item.url);
+      if (st?.destPath && fs.existsSync(st.destPath)) {
+        const sz = fs.statSync(st.destPath).size;
+        item.resumeDestPath = st.destPath;
+        upsertDownload(item.url, {
+          ...st,
+          bytesDownloaded: sz,
+          totalBytes: st.totalBytes,
+          percent: st.totalBytes > 0 ? Math.round((sz / st.totalBytes) * 100) : st.percent,
+          status: "pending"
+        });
+        emit("download-progress", {
+          url: item.url,
+          percent: st.totalBytes > 0 ? Math.round((sz / st.totalBytes) * 100) : st.percent,
+          speed: 0,
+          downloaded: sz,
+          total: st.totalBytes,
+          fileName: st.filename
+        });
+      }
+      item.status = "waiting";
+      emitStatus(item.url, "waiting", undefined, item.resolvedFileName ?? st?.filename);
+      logInfo("reprise veille: fichier remis en file d'attente", { url: item.url });
+      currentSpeedMap.delete(item.url);
+    } else if (item.status !== "paused") {
+      const st = getDownloadState(item.url);
+      if (st?.destPath && fs.existsSync(st.destPath)) {
+        const sz = fs.statSync(st.destPath).size;
+        upsertDownload(item.url, {
+          ...st,
+          bytesDownloaded: sz,
+          totalBytes: st.totalBytes,
+          percent: st.totalBytes > 0 ? Math.round((sz / st.totalBytes) * 100) : 0,
+          status: "pending"
+        });
+      }
       item.status = "error";
       const err =
         error instanceof Error ? error.message : "Unknown error while downloading this file.";
@@ -390,10 +650,13 @@ const startSingleDownload = async (item: QueueItem): Promise<void> => {
         fileName: item.resolvedFileName ?? path.basename(item.url)
       };
       emit("download-error", errorPayload);
+      currentSpeedMap.delete(item.url);
+    } else {
+      currentSpeedMap.delete(item.url);
     }
-    currentSpeedMap.delete(item.url);
   } finally {
     activeDownloads.delete(item.url);
+    syncPowerSaveBlockerForDownloads();
     emitStats();
     void maybeStartNext();
   }
@@ -403,9 +666,11 @@ const resetQueue = (): void => {
   queue = [];
   activeDownloads.forEach((active) => active.controller.abort());
   activeDownloads.clear();
+  syncPowerSaveBlockerForDownloads();
   currentSpeedMap.clear();
   completed = 0;
   failed = 0;
+  resetDuplicateFilePolicy();
 };
 
 const normalizeUrls = (urls: string[]): string[] => {
@@ -422,6 +687,27 @@ const isValidHttpUrl = (value: string): boolean => {
   } catch {
     return false;
   }
+};
+
+const showQuitConfirmDialog = (): Promise<boolean> => {
+  const parent = mainWindow ?? BrowserWindow.getFocusedWindow();
+  const opts = {
+    type: "question" as const,
+    buttons: ["Annuler", "Quitter"],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+    title: "Quitter BatchDL ?",
+    message: "Voulez-vous vraiment fermer l'application ?",
+    detail:
+      activeDownloads.size > 0
+        ? "Des téléchargements sont en cours. Ils seront mis en pause et pourront être repris au prochain lancement."
+        : undefined
+  };
+  const promise = parent
+    ? dialog.showMessageBox(parent, opts)
+    : dialog.showMessageBox(opts);
+  return promise.then(({ response }) => response === 1);
 };
 
 const createWindow = (): void => {
@@ -445,12 +731,30 @@ const createWindow = (): void => {
     const indexPath = path.join(__dirname, "../dist/index.html");
     void mainWindow.loadURL(pathToFileURL(indexPath).toString());
   }
+
+  mainWindow.on("close", (e) => {
+    if (allowQuit) {
+      return;
+    }
+    e.preventDefault();
+    void showQuitConfirmDialog().then((confirmed) => {
+      if (confirmed) {
+        allowQuit = true;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.close();
+        }
+      }
+    });
+  });
 };
 
 app.whenReady().then(() => {
   const logPath = initLogger(app.getPath("userData"));
   logInfo("logger initialized", { logPath });
+  loadState();
   createWindow();
+
+  powerMonitor.on("resume", handleSystemResume);
 
   ipcMain.handle("choose-folder", async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
@@ -517,8 +821,71 @@ app.whenReady().then(() => {
       logInfo("download paused", { url });
       emitStatus(item.url, "paused");
     }
+    const st = getDownloadState(url);
+    if (st?.destPath && fs.existsSync(st.destPath)) {
+      const sz = fs.statSync(st.destPath).size;
+      upsertDownload(url, {
+        ...st,
+        bytesDownloaded: sz,
+        percent: st.totalBytes > 0 ? Math.round((sz / st.totalBytes) * 100) : st.percent,
+        status: "pending"
+      });
+    }
     active.controller.abort();
     return true;
+  });
+
+  ipcMain.handle("get-pending-restore", (): RestoreDownloadRow[] => {
+    return getIncompleteDownloads().map((d) => ({
+      url: d.url,
+      filename: d.filename,
+      percent: d.percent,
+      bytesDownloaded: d.bytesDownloaded,
+      totalBytes: d.totalBytes,
+      destFolder: d.destFolder,
+      destPath: d.destPath
+    }));
+  });
+
+  ipcMain.handle("confirm-restore-downloads", async (_, urls: string[]) => {
+    let n = 0;
+    for (const url of urls) {
+      const d = getDownloadState(url);
+      if (!d) {
+        continue;
+      }
+      if (queue.some((q) => q.url === url)) {
+        continue;
+      }
+      queue.push({
+        url: d.url,
+        destinationFolder: d.destFolder,
+        status: "waiting",
+        resolvedFileName: d.filename,
+        resumeDestPath: d.destPath && fs.existsSync(d.destPath) ? d.destPath : undefined
+      });
+      n += 1;
+    }
+    emitStats();
+    void maybeStartNext();
+    return { queued: n };
+  });
+
+  ipcMain.handle("discard-restore-downloads", async (_, urls: string[]) => {
+    let n = 0;
+    for (const url of urls) {
+      const d = getDownloadState(url);
+      if (d?.destPath && fs.existsSync(d.destPath)) {
+        try {
+          fs.unlinkSync(d.destPath);
+        } catch {
+          // ignore
+        }
+      }
+      removeDownload(url);
+      n += 1;
+    }
+    return { removed: n };
   });
 
   ipcMain.handle("retry-download", async (_, url: string) => {
@@ -530,6 +897,10 @@ app.whenReady().then(() => {
     if (item.status === "error" || item.status === "paused") {
       if (item.status === "error") {
         failed = Math.max(0, failed - 1);
+      }
+      const st = getDownloadState(url);
+      if (st?.destPath && fs.existsSync(st.destPath)) {
+        item.resumeDestPath = st.destPath;
       }
       item.status = "waiting";
       logInfo("download re-queued", { url });
@@ -556,6 +927,26 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", (e) => {
+  if (!allowQuit) {
+    e.preventDefault();
+    void showQuitConfirmDialog().then((confirmed) => {
+      if (confirmed) {
+        allowQuit = true;
+        app.quit();
+      }
+    });
+    return;
+  }
+  if (downloadPowerSaveBlockerId !== null) {
+    powerSaveBlocker.stop(downloadPowerSaveBlockerId);
+    downloadPowerSaveBlockerId = null;
+  }
+  for (const [url] of activeDownloads) {
+    const st = getDownloadState(url);
+    if (st) {
+      upsertDownload(url, { ...st, status: "pending" });
+    }
+  }
   void closeSharedDatanodesBrowser();
 });
