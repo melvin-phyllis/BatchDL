@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>BatchDL - Active Downloads</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <style>
+      .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24; }
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #424754; border-radius: 1rem; }
+      .glow-primary { box-shadow: 0 0 12px rgba(173, 198, 255, 0.3); }
+      .glow-error { box-shadow: 0 0 12px rgba(255, 180, 171, 0.2); }
+    </style>
+  </head>
+  <body class="bg-[#131313] text-[#e5e2e1] font-body select-none overflow-hidden h-screen flex flex-col">
+    <header class="flex justify-between items-center w-full px-6 h-14 z-50 bg-[#131313] border-b border-[#3a3939]/15 fixed top-0 left-0">
+      <div class="flex items-center gap-4">
+        <span class="text-xl font-black tracking-tighter">BatchDL</span>
+        <span class="text-xs uppercase tracking-widest font-semibold text-[#adc6ff]">Queue</span>
+      </div>
+    </header>
+    <div class="flex flex-1 pt-14 h-full">
+      <nav class="fixed left-0 top-0 h-full flex flex-col pt-14 pb-4 bg-[#1c1b1b] w-64 z-40"></nav>
+      <main class="ml-64 flex-1 bg-[#131313] p-8 custom-scrollbar overflow-y-auto">
+        <div class="flex justify-between items-end mb-10">
+          <div>
+            <h1 class="text-2xl font-bold tracking-tight mb-1">Active Transfers</h1>
+            <p class="text-sm text-[#c2c6d6]">Monitoring 4 network requests across 2 servers</p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs uppercase tracking-widest text-[#c2c6d6] font-semibold mb-1">Total Throughput</p>
+            <div class="flex items-center gap-2"><span class="text-3xl font-black text-[#adc6ff]">8.1</span><span class="text-lg font-bold">MB/s</span></div>
+          </div>
+        </div>
+
+        <div class="space-y-4">
+          <div class="bg-[#1c1b1b] rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-bold">Crimson_Desert_part016.rar</h3>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#adc6ff]/10 text-[#adc6ff] uppercase">Downloading</span>
+            </div>
+            <div class="relative w-full h-1.5 bg-[#353534] rounded-full overflow-hidden">
+              <div class="absolute top-0 left-0 h-full bg-[#adc6ff] glow-primary rounded-full" style="width: 67%"></div>
+            </div>
+          </div>
+          <div class="bg-[#1c1b1b] rounded-xl p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-bold">Soundtrack_HighRes.7z</h3>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#adc6ff]/5 text-[#adc6ff]/60 uppercase">Resolving...</span>
+            </div>
+          </div>
+          <div class="bg-[#1c1b1b] rounded-xl p-5 border border-[#93000a]/20">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="font-bold">Manual_PDF.rar</h3>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#93000a]/20 text-[#ffb4ab] uppercase">Error</span>
+            </div>
+            <div class="relative w-full h-1.5 bg-[#353534] rounded-full overflow-hidden">
+              <div class="absolute top-0 left-0 h-full bg-[#ffb4ab] glow-error rounded-full" style="width: 15%"></div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </body>
+</html>

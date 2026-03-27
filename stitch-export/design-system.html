@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>BatchDL - Kinetic Command Center</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "background": "#131313",
+              "primary-container": "#4d8eff",
+              "on-surface-variant": "#c2c6d6",
+              "outline-variant": "#424754",
+              "surface-container-high": "#2a2a2a",
+              "on-surface": "#e5e2e1",
+              "primary": "#adc6ff",
+              "surface-bright": "#3a3939",
+              "surface-container": "#201f1f",
+              "outline": "#8c909f",
+              "surface-container-highest": "#353534",
+              "surface": "#131313",
+              "surface-container-lowest": "#0e0e0e",
+              "surface-variant": "#353534",
+              "surface-container-low": "#1c1b1b",
+              "error": "#ffb4ab",
+              "error-container": "#93000a"
+            },
+            fontFamily: {
+              "headline": ["Inter"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: { "DEFAULT": "0.5rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" }
+          }
+        }
+      };
+    </script>
+    <style>
+      body { font-family: "Inter", sans-serif; background-color: #131313; color: #e5e2e1; }
+      .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24; }
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #424754; border-radius: 1rem; }
+      .electric-glow { box-shadow: 0 0 12px rgba(173, 198, 255, 0.3); }
+      .primary-gradient { background: linear-gradient(135deg, #adc6ff 0%, #4d8eff 100%); }
+    </style>
+  </head>
+  <body class="overflow-hidden">
+    <header class="bg-[#131313] text-[#e5e2e1] border-b border-[#3a3939]/15 flex justify-between items-center w-full px-6 h-14 fixed top-0">
+      <div class="flex items-center gap-4">
+        <span class="text-xl font-black tracking-tighter">BatchDL</span>
+      </div>
+      <div class="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded border border-outline-variant/15">
+        <span class="material-symbols-outlined text-sm text-primary">folder_open</span>
+        <span class="text-xs font-medium text-on-surface-variant">C:/Downloads/BatchDL</span>
+      </div>
+    </header>
+    <main class="pt-14 h-screen flex flex-col bg-background">
+      <div class="flex-1 p-6 flex flex-col gap-6 overflow-hidden">
+        <section class="flex flex-col gap-4">
+          <div class="relative group">
+            <textarea class="w-full h-48 bg-surface-container-lowest text-on-surface rounded-lg p-6 border-l-2 border-transparent resize-none font-mono text-sm shadow-inner" placeholder="Paste your links here, one per line..."></textarea>
+          </div>
+        </section>
+        <section class="flex-1 flex flex-col min-h-0 bg-surface-container-low rounded-xl border border-outline-variant/5 shadow-2xl">
+          <div class="px-6 py-3 border-b border-outline-variant/5">
+            <h3 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Download Queue</h3>
+          </div>
+          <div class="flex-1 overflow-y-auto custom-scrollbar px-4 py-2 space-y-2">
+            <div class="flex items-center gap-4 bg-surface-container-high p-4 rounded-lg">
+              <div class="w-10 h-10 rounded bg-surface-container-highest flex items-center justify-center text-on-surface-variant">
+                <span class="material-symbols-outlined">folder_zip</span>
+              </div>
+              <p class="text-sm font-semibold text-on-surface truncate">Project_Asset_01.zip</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

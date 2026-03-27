@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>BatchDL - Completed Downloads</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    <style>
+      body { font-family: "Inter", sans-serif; background-color: #131313; color: #e5e2e1; margin: 0; }
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #424754; border-radius: 1rem; }
+      .electric-glow { box-shadow: 0 0 12px rgba(173, 198, 255, 0.3); }
+    </style>
+  </head>
+  <body class="bg-[#131313] text-[#e5e2e1] overflow-hidden">
+    <header class="fixed top-0 right-0 left-0 h-14 bg-[#131313]/80 backdrop-blur-md flex justify-between items-center px-6 z-50 border-b border-[#424754]/15">
+      <div class="flex items-center gap-4">
+        <span class="text-xl font-black tracking-tighter">BatchDL</span>
+        <span class="text-xs uppercase tracking-widest font-semibold text-[#adc6ff]">Downloads / Completed</span>
+      </div>
+    </header>
+    <main class="mt-14 p-8 h-[calc(100vh-3.5rem)] overflow-y-auto custom-scrollbar">
+      <section class="mb-8 flex items-center justify-between bg-[#2a2a2a]/40 p-5 rounded-lg border border-[#424754]/10">
+        <div>
+          <h1 class="text-lg font-bold tracking-tight">4 files downloaded successfully</h1>
+          <p class="text-sm text-[#adc6ff]/80 font-medium">1.97 GB total • All operations finished</p>
+        </div>
+        <button class="px-5 py-2 text-sm font-bold text-[#00285d] bg-gradient-to-br from-[#adc6ff] to-[#4d8eff] electric-glow rounded">New batch</button>
+      </section>
+
+      <div class="space-y-3">
+        <div class="bg-[#1c1b1b] p-4 rounded-lg flex items-center gap-6 border-l-4 border-[#adc6ff]">
+          <div class="flex-1 min-w-0">
+            <h3 class="text-sm font-semibold truncate">Product_Cinematic_Final_4K.mp4</h3>
+            <div class="relative w-full h-1.5 bg-[#353534] rounded-full overflow-hidden mt-2">
+              <div class="absolute top-0 left-0 h-full w-full bg-[#adc6ff] electric-glow"></div>
+            </div>
+          </div>
+          <span class="text-xs font-bold text-[#adc6ff]">Done</span>
+        </div>
+
+        <div class="bg-[#1c1b1b] p-4 rounded-lg flex items-center gap-6 border-l-4 border-[#adc6ff]">
+          <div class="flex-1 min-w-0">
+            <h3 class="text-sm font-semibold truncate">Assets_Package_Q3_Project.zip</h3>
+            <div class="relative w-full h-1.5 bg-[#353534] rounded-full overflow-hidden mt-2">
+              <div class="absolute top-0 left-0 h-full w-full bg-[#adc6ff] electric-glow"></div>
+            </div>
+          </div>
+          <span class="text-xs font-bold text-[#adc6ff]">Done</span>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
